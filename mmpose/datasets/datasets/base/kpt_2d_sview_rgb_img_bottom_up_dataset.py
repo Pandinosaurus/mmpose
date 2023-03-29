@@ -62,6 +62,7 @@ class Kpt2dSviewRgbImgBottomUpDataset(Dataset, metaclass=ABCMeta):
         self.ann_info['inference_channel'] = data_cfg['inference_channel']
         self.ann_info['dataset_channel'] = data_cfg['dataset_channel']
 
+        self.with_bbox = data_cfg.get('with_bbox', False)
         self.use_nms = data_cfg.get('use_nms', False)
         self.soft_nms = data_cfg.get('soft_nms', True)
         self.oks_thr = data_cfg.get('oks_thr', 0.9)
@@ -161,9 +162,8 @@ class Kpt2dSviewRgbImgBottomUpDataset(Dataset, metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def evaluate(self, cfg, outputs, res_folder, metric, *args, **kwargs):
+    def evaluate(self, results, *args, **kwargs):
         """Evaluate keypoint results."""
-        raise NotImplementedError
 
     def prepare_train_img(self, idx):
         """Prepare image for training given the index."""

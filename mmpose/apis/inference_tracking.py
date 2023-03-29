@@ -1,5 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import warnings
+from functools import partial
 
 import numpy as np
 
@@ -42,13 +43,13 @@ def _track_by_iou(res, results_last, thr):
     Args:
         res (dict): The bbox & pose results of the person instance.
         results_last (list[dict]): The bbox & pose & track_id info of the
-                last frame (bbox_result, pose_result, track_id).
+            last frame (bbox_result, pose_result, track_id).
         thr (float): The threshold for iou tracking.
 
     Returns:
         int: The track id for the new person instance.
         list[dict]: The bbox & pose & track_id info of the persons
-                that have not been matched on the last frame.
+            that have not been matched on the last frame.
         dict: The matched person instance on the last frame.
     """
 
@@ -75,19 +76,20 @@ def _track_by_iou(res, results_last, thr):
     return track_id, results_last, match_result
 
 
-def _track_by_oks(res, results_last, thr):
+def _track_by_oks(res, results_last, thr, sigmas):
     """Get track id using OKS tracking greedily.
 
     Args:
         res (dict): The pose results of the person instance.
         results_last (list[dict]): The pose & track_id info of the
-                last frame (pose_result, track_id).
+            last frame (pose_result, track_id).
         thr (float): The threshold for oks tracking.
+        sigmas (np.ndarray): standard deviation of keypoint labelling.
 
     Returns:
         int: The track id for the new person instance.
         list[dict]: The pose & track_id info of the persons
-                that have not been matched on the last frame.
+            that have not been matched on the last frame.
         dict: The matched person instance on the last frame.
     """
     pose = res['keypoints'].reshape((-1))
@@ -102,7 +104,7 @@ def _track_by_oks(res, results_last, thr):
         [res_last['keypoints'].reshape((-1)) for res_last in results_last])
     area_last = np.array([res_last['area'] for res_last in results_last])
 
-    oks_score = oks_iou(pose, pose_last, area, area_last)
+    oks_score = oks_iou(pose, pose_last, area, area_last, sigmas=sigmas)
 
     max_index = np.argmax(oks_score)
 
@@ -121,15 +123,15 @@ def _get_area(results):
 
     Args:
         results (list[dict]): The pose results of the current frame
-                (pose_result).
+            (pose_result).
     Returns:
         list[dict]: The bbox & pose info of the current frame
-                (bbox_result, pose_result, area).
+            (bbox_result, pose_result, area).
     """
     for result in results:
         if 'bbox' in result:
-            result['area'] = np.abs((result['bbox'][1] - result['bbox'][0]) *
-                                    (result['bbox'][2] - result['bbox'][3]))
+            result['area'] = ((result['bbox'][2] - result['bbox'][0]) *
+                              (result['bbox'][3] - result['bbox'][1]))
         else:
             xmin = np.min(
                 result['keypoints'][:, 0][result['keypoints'][:, 0] > 0],
@@ -152,7 +154,7 @@ def _temporal_refine(result, match_result, fps=None):
                 (pose_result).
         match_result (dict): The pose results of the last frame
                 (match_result)
-    return:
+    Returns:
         (array): The person keypoints after refine.
     """
     if 'one_euro' in match_result:
@@ -171,32 +173,50 @@ def get_track_id(results,
                  use_oks=False,
                  tracking_thr=0.3,
                  use_one_euro=False,
-                 fps=None):
+                 fps=None,
+                 sigmas=None):
     """Get track id for each person instance on the current frame.
 
     Args:
         results (list[dict]): The bbox & pose results of the current frame
-                (bbox_result, pose_result).
-        results_last (list[dict]): The bbox & pose & track_id info of the
-                last frame (bbox_result, pose_result, track_id).
+            (bbox_result, pose_result).
+        results_last (list[dict], optional): The bbox & pose & track_id info
+            of the last frame (bbox_result, pose_result, track_id). None is
+            equivalent to an empty result list. Default: None
         next_id (int): The track id for the new person instance.
         min_keypoints (int): Minimum number of keypoints recognized as person.
-                            default: 3.
+            0 means no minimum threshold required. Default: 3.
         use_oks (bool): Flag to using oks tracking. default: False.
         tracking_thr (float): The threshold for tracking.
         use_one_euro (bool): Option to use one-euro-filter. default: False.
         fps (optional): Parameters that d_cutoff
-                        when one-euro-filter is used as a video input
+            when one-euro-filter is used as a video input
+        sigmas (np.ndarray): Standard deviation of keypoint labelling. It is
+            necessary for oks_iou tracking (`use_oks==True`). It will be use
+            sigmas of COCO as default if it is set to None. Default is None.
 
     Returns:
-        list[dict]: The bbox & pose & track_id info of the
-                current frame (bbox_result, pose_result, track_id).
-        int: The track id for the new person instance.
+        tuple:
+        - results (list[dict]): The bbox & pose & track_id info of the \
+            current frame (bbox_result, pose_result, track_id).
+        - next_id (int): The track id for the new person instance.
     """
+    if use_one_euro:
+        warnings.warn(
+            'In the future, get_track_id() will no longer perform '
+            'temporal refinement and the arguments `use_one_euro` and '
+            '`fps` will be deprecated. This part of function has been '
+            'migrated to Smoother (mmpose.core.Smoother). See '
+            'demo/top_down_pose_trackign_demo_with_mmdet.py for an '
+            'example.', DeprecationWarning)
+
+    if results_last is None:
+        results_last = []
+
     results = _get_area(results)
 
     if use_oks:
-        _track = _track_by_oks
+        _track = partial(_track_by_oks, sigmas=sigmas)
     else:
         _track = _track_by_iou
 
@@ -204,7 +224,7 @@ def get_track_id(results,
         track_id, results_last, match_result = _track(result, results_last,
                                                       tracking_thr)
         if track_id == -1:
-            if np.count_nonzero(result['keypoints'][:, 1]) > min_keypoints:
+            if np.count_nonzero(result['keypoints'][:, 1]) >= min_keypoints:
                 result['track_id'] = next_id
                 next_id += 1
             else:
@@ -215,6 +235,7 @@ def get_track_id(results,
                 result['track_id'] = -1
         else:
             result['track_id'] = track_id
+
         if use_one_euro:
             result['keypoints'] = _temporal_refine(
                 result, match_result, fps=fps)
@@ -239,11 +260,11 @@ def vis_pose_tracking_result(model,
         model (nn.Module): The loaded detector.
         img (str | np.ndarray): Image filename or loaded image.
         result (list[dict]): The results to draw over `img`
-                (bbox_result, pose_result).
+            (bbox_result, pose_result).
         radius (int): Radius of circles.
         thickness (int): Thickness of lines.
         kpt_score_thr (float): The threshold to visualize the keypoints.
-        skeleton (list[tuple()]): Default None.
+        skeleton (list[tuple]): Default None.
         show (bool):  Whether to show the image. Default True.
         out_file (str|None): The filename of the output visualization image.
     """

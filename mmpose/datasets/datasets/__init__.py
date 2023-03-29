@@ -4,13 +4,16 @@ from ...deprecated import (TopDownFreiHandDataset, TopDownOneHand10KDataset,
 from .animal import (AnimalATRWDataset, AnimalFlyDataset, AnimalHorse10Dataset,
                      AnimalLocustDataset, AnimalMacaqueDataset,
                      AnimalPoseDataset, AnimalZebraDataset)
-from .body3d import Body3DH36MDataset
+from .body3d import (Body3DH36MDataset, Body3DMviewDirectCampusDataset,
+                     Body3DMviewDirectPanopticDataset,
+                     Body3DMviewDirectShelfDataset)
 from .bottom_up import (BottomUpAicDataset, BottomUpCocoDataset,
                         BottomUpCocoWholeBodyDataset, BottomUpCrowdPoseDataset,
                         BottomUpMhpDataset)
 from .face import (Face300WDataset, FaceAFLWDataset, FaceCocoWholeBodyDataset,
                    FaceCOFWDataset, FaceWFLWDataset)
 from .fashion import DeepFashionDataset
+from .gesture import NVGestureDataset
 from .hand import (FreiHandDataset, HandCocoWholeBodyDataset,
                    InterHand2DDataset, InterHand3DDataset, OneHand10KDataset,
                    PanopticDataset)
@@ -21,7 +24,8 @@ from .top_down import (TopDownAicDataset, TopDownCocoDataset,
                        TopDownH36MDataset, TopDownHalpeDataset,
                        TopDownJhmdbDataset, TopDownMhpDataset,
                        TopDownMpiiDataset, TopDownMpiiTrbDataset,
-                       TopDownOCHumanDataset, TopDownPoseTrack18Dataset)
+                       TopDownOCHumanDataset, TopDownPoseTrack18Dataset,
+                       TopDownPoseTrack18VideoDataset)
 
 __all__ = [
     'TopDownCocoDataset', 'BottomUpCocoDataset', 'BottomUpMhpDataset',
@@ -39,5 +43,7 @@ __all__ = [
     'Body3DH36MDataset', 'AnimalHorse10Dataset', 'AnimalMacaqueDataset',
     'AnimalFlyDataset', 'AnimalLocustDataset', 'AnimalZebraDataset',
     'AnimalATRWDataset', 'AnimalPoseDataset', 'TopDownH36MDataset',
-    'TopDownHalpeDataset'
+    'TopDownHalpeDataset', 'TopDownPoseTrack18VideoDataset',
+    'Body3DMviewDirectPanopticDataset', 'Body3DMviewDirectShelfDataset',
+    'Body3DMviewDirectCampusDataset', 'NVGestureDataset'
 ]

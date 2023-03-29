@@ -4,6 +4,7 @@ from collections.abc import Sequence
 
 import mmcv
 import numpy as np
+import torch
 from mmcv.parallel import DataContainer as DC
 from mmcv.utils import build_from_cfg
 from numpy import random
@@ -27,8 +28,19 @@ class ToTensor:
         results (dict): contain all information about training.
     """
 
+    def __init__(self, device='cpu'):
+        self.device = device
+
+    def _to_tensor(self, x):
+        return torch.from_numpy(x.astype('float32')).permute(2, 0, 1).to(
+            self.device).div_(255.0)
+
     def __call__(self, results):
-        results['img'] = F.to_tensor(results['img'])
+        if isinstance(results['img'], (list, tuple)):
+            results['img'] = [self._to_tensor(img) for img in results['img']]
+        else:
+            results['img'] = self._to_tensor(results['img'])
+
         return results
 
 
@@ -48,8 +60,15 @@ class NormalizeTensor:
         self.std = std
 
     def __call__(self, results):
-        results['img'] = F.normalize(
-            results['img'], mean=self.mean, std=self.std)
+        if isinstance(results['img'], (list, tuple)):
+            results['img'] = [
+                F.normalize(img, mean=self.mean, std=self.std, inplace=True)
+                for img in results['img']
+            ]
+        else:
+            results['img'] = F.normalize(
+                results['img'], mean=self.mean, std=self.std, inplace=True)
+
         return results
 
 
@@ -179,7 +198,9 @@ class Albumentation:
     to get more information about pixel-level transforms.
 
     An example of ``transforms`` is as followed:
-    .. code-block::
+
+    .. code-block:: python
+
         [
             dict(
                 type='RandomBrightnessContrast',
@@ -195,6 +216,7 @@ class Albumentation:
                 ],
                 p=0.1),
         ]
+
     Args:
         transforms (list[dict]): A list of Albumentation transformations
         keymap (dict): Contains {'input key':'albumentation-style key'},
@@ -223,8 +245,10 @@ class Albumentation:
         """Import a module from albumentations.
 
         It resembles some of :func:`build_from_cfg` logic.
+
         Args:
             cfg (dict): Config dict. It should at least contain the key "type".
+
         Returns:
             obj: The constructed object.
         """
@@ -237,8 +261,8 @@ class Albumentation:
             if albumentations is None:
                 raise RuntimeError('albumentations is not installed')
             if not hasattr(albumentations.augmentations.transforms, obj_type):
-                warnings.warn('{obj_type} is not pixel-level transformations. '
-                              'Please use with caution.')
+                warnings.warn(f'{obj_type} is not pixel-level transformations.'
+                              ' Please use with caution.')
             obj_cls = getattr(albumentations, obj_type)
         else:
             raise TypeError(f'type must be a str, but got {type(obj_type)}')
@@ -256,9 +280,11 @@ class Albumentation:
         """Dictionary mapper.
 
         Renames keys according to keymap provided.
+
         Args:
             d (dict): old dict
             keymap (dict): {'old_key':'new_key'}
+
         Returns:
             dict: new dict.
         """
@@ -407,6 +433,50 @@ class PhotometricDistortion:
 
 
 @PIPELINES.register_module()
+class MultiItemProcess:
+    """Process each item and merge multi-item results to lists.
+
+    Args:
+        pipeline (dict): Dictionary to construct pipeline for a single item.
+    """
+
+    def __init__(self, pipeline):
+        self.pipeline = Compose(pipeline)
+
+    def __call__(self, results):
+        results_ = {}
+        for idx, result in results.items():
+            single_result = self.pipeline(result)
+            for k, v in single_result.items():
+                if k in results_:
+                    results_[k].append(v)
+                else:
+                    results_[k] = [v]
+
+        return results_
+
+
+@PIPELINES.register_module()
+class DiscardDuplicatedItems:
+
+    def __init__(self, keys_list):
+        """Discard duplicated single-item results.
+
+        Args:
+            keys_list (list): List of keys that need to be deduplicate.
+        """
+        self.keys_list = keys_list
+
+    def __call__(self, results):
+        for k, v in results.items():
+            if k in self.keys_list:
+                assert isinstance(v, Sequence)
+                results[k] = v[0]
+
+        return results
+
+
+@PIPELINES.register_module()
 class MultitaskGatherTarget:
     """Gather the targets for multitask heads.
 
@@ -448,9 +518,9 @@ class RenameKeys:
     """Rename the keys.
 
     Args:
-    key_pairs (Sequence[tuple]): Required keys to be renamed. If a tuple
-    (key_src, key_tgt) is given as an element, the item retrieved by key_src
-    will be renamed as key_tgt.
+        key_pairs (Sequence[tuple]): Required keys to be renamed.
+            If a tuple (key_src, key_tgt) is given as an element,
+            the item retrieved by key_src will be renamed as key_tgt.
     """
 
     def __init__(self, key_pairs):

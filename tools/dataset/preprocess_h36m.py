@@ -15,6 +15,25 @@ import numpy as np
 from spacepy import pycdf
 
 
+def safe_extract(tar, path, members=None, *, numeric_owner=False):
+
+    def is_within_directory(directory, target):
+
+        abs_directory = os.path.abspath(directory)
+        abs_target = os.path.abspath(target)
+
+        prefix = os.path.commonprefix([abs_directory, abs_target])
+
+        return prefix == abs_directory
+
+    for member in tar.getmembers():
+        member_path = os.path.join(path, member.name)
+        if not is_within_directory(path, member_path):
+            raise Exception('Attempted Path Traversal in Tar File')
+
+    tar.extractall(path, members, numeric_owner=numeric_owner)
+
+
 class PreprocessH36m:
     """Preprocess Human3.6M dataset.
 
@@ -98,7 +117,7 @@ class PreprocessH36m:
                 filename = join(cur_dir, file + '.tgz')
                 print(f'Extracting {filename} ...')
                 with tarfile.open(filename) as tar:
-                    tar.extractall(self.extracted_dir)
+                    safe_extract(tar, self.extracted_dir)
         print('Extraction done.\n')
 
     def generate_cameras_file(self):
@@ -395,7 +414,7 @@ def parse_args():
         help='Directory of the processed files. If not given, it will be '
         'placed under the same parent directory as original_dir.')
     parser.add_argument(
-        '--sample_rate',
+        '--sample-rate',
         type=int,
         default=5,
         help='Downsample FPS to `1 / sample_rate`. Default: 5.')
